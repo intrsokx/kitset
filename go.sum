@@ -1,0 +1,6 @@
+github.com/google/uuid v1.2.0 h1:qJYtXnJRWmpe7m/3XlyhrsLrEURqHRM2kxzoxXqyUDs=
+github.com/google/uuid v1.2.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/intrsokx/encrypt-util v0.0.0-20210514105035-50fdf8bea0c1 h1:btzScdAtdymJJkJjFkECJrMO8o3lxmz0idscDwdQIx8=
+github.com/intrsokx/encrypt-util v0.0.0-20210514105035-50fdf8bea0c1/go.mod h1:IlsTisPwDDj/ff4Rk436WmhlWzi8XJsXB65dly/UM4k=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
