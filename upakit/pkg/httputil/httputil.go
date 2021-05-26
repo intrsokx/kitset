@@ -14,12 +14,12 @@ var defaultReqHeader = map[string]string{
 	"Accept-Charset": "UTF-8",
 }
 
-type HttpUtil struct {
+type UpaClient struct {
 	client *http.Client
 	header map[string]string
 }
 
-func NewHttpUtil(timeout time.Duration) *HttpUtil {
+func NewHttpUtil(timeout time.Duration) *UpaClient {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DisableKeepAlives:      false,
@@ -36,7 +36,7 @@ func NewHttpUtil(timeout time.Duration) *HttpUtil {
 		Timeout: timeout,
 	}
 
-	util := &HttpUtil{
+	util := &UpaClient{
 		client: client,
 		header: defaultReqHeader,
 	}
@@ -44,7 +44,7 @@ func NewHttpUtil(timeout time.Duration) *HttpUtil {
 	return util
 }
 
-func NewHttpUtilWithProxy(timeout time.Duration, proxy *url.URL) *HttpUtil {
+func NewHttpUtilWithProxy(timeout time.Duration, proxy *url.URL) *UpaClient {
 	/**client配置
 	Idle: 空闲
 	Coon: 连接
@@ -67,7 +67,7 @@ func NewHttpUtilWithProxy(timeout time.Duration, proxy *url.URL) *HttpUtil {
 		Timeout: timeout,
 	}
 
-	util := &HttpUtil{
+	util := &UpaClient{
 		client: client,
 		header: defaultReqHeader,
 	}
@@ -75,7 +75,7 @@ func NewHttpUtilWithProxy(timeout time.Duration, proxy *url.URL) *HttpUtil {
 	return util
 }
 
-func (util *HttpUtil) SetHeader(header map[string]string) {
+func (util *UpaClient) SetHeader(header map[string]string) {
 	util.header = header
 }
 
@@ -84,7 +84,7 @@ type Response struct {
 	StatusCode int
 }
 
-func (util *HttpUtil) Post(url string, data []byte) (*Response, error) {
+func (util *UpaClient) Post(url string, data []byte) (*Response, error) {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		return nil, err

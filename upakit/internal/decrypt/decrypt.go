@@ -17,7 +17,7 @@ func RsaDecryptData(cipher, priKey string) (string, error) {
 		SubStep:            128,
 	}
 
-	data := HexstrTobyte(cipher)
+	data := hexStrToByte(cipher)
 
 	plain, err := rsautil.Decrypt(data, []byte(priKey), cfg)
 	if err != nil {
@@ -27,7 +27,7 @@ func RsaDecryptData(cipher, priKey string) (string, error) {
 	return url.QueryUnescape(string(plain))
 }
 
-func HexstrTobyte(str string) []byte {
+func hexStrToByte(str string) []byte {
 	b := []byte{}
 	for i := 0; i < len(str)-1; i = i + 2 {
 		base, _ := strconv.ParseInt(str[i:i+2], 16, 10)

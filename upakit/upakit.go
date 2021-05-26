@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,38 +21,35 @@ import (
 	"github.com/intrsokx/kitset/upakit/pkg/httputil"
 )
 
-const (
-	//https://auth.boxincredit.com/repoweb/auth
-	//https://authsandbox.boxincredit.com/repoweb/auth
-	UPA_AUTH_URL         = "https://auth.boxincredit.com/repoweb/auth"
-	REPOWEB_URL_PATH_FMT = "%s/repoweb/api/v3/%s.do"
-)
-
 var (
 	DefaultTimeOut = time.Second * 30
 
 	//upa kit工具包自定义Msg
 	MsgNet           = "[UPA KIT] network err"
-	MsgEncrypt       = "[UPA KIT] encrypt err"
-	MsgDecrypt       = "[UPA KIT] decrypt err"
-	MsgBadDataFormat = "[UPA KIT] bad data format"
+	MsgEncrypt       = "[UPA KIT] encrypt fail"
+	MsgDecrypt       = "[UPA KIT] decrypt fail"
+	MsgBadDataFormat = "[UPA KIT] bad data format (msg:%s)"
 )
 
 //TODO add log
 type UPAUtil struct {
-	client *httputil.HttpUtil
+	client *httputil.UpaClient
 	lock   sync.RWMutex
 
+	upaAuthUrl    string
+	upaRepoUrlFmt string
 	developmentId string
 	authSignature string
 	baseKey       string
 	rsaPriKey     string
 	aesKey        []byte
-	Auth          *model.UpaAuthResp
+	authInfo      *model.UpaAuthInfo
 }
 
-func NewUPAUtil(developmentId, authSignature, key string) *UPAUtil {
+func NewUPAUtil(upaAuthUrl, upaRepoUrlFmt, developmentId, authSignature, key string, proxy *url.URL) *UPAUtil {
 	upa := &UPAUtil{
+		upaAuthUrl:    upaAuthUrl,
+		upaRepoUrlFmt: upaRepoUrlFmt,
 		developmentId: developmentId,
 		authSignature: authSignature,
 		baseKey:       key,
@@ -66,70 +64,43 @@ func NewUPAUtil(developmentId, authSignature, key string) *UPAUtil {
 	h.Write([]byte(upa.baseKey))
 	upa.aesKey = h.Sum(nil)
 
+	var upaClient *httputil.UpaClient
+	if proxy == nil {
+		upaClient = httputil.NewHttpUtil(DefaultTimeOut)
+	} else {
+		upaClient = httputil.NewHttpUtilWithProxy(DefaultTimeOut, proxy)
+	}
+	upa.client = upaClient
+
+	//认证
+	resp, err := upa.auth()
+	if err != nil {
+		//panic(fmt.Sprintf("%+v", err))
+		fmt.Printf("%+v\n", err)
+		return nil
+	}
+	upa.authInfo = resp.AuthInfo
+
 	return upa
 }
 
-func (upa *UPAUtil) SetHttpClient(client *httputil.HttpUtil) {
-	upa.client = client
-}
-
-func (upa *UPAUtil) GetRepoWebHost() string {
-	upa.lock.RLock()
-	defer upa.lock.RUnlock()
-
-	if len(upa.Auth.AuthInfo.ServerAddress) > 0 {
-		return upa.Auth.AuthInfo.ServerAddress[0]
-	}
-	//default https://sandbox.geality.com
-	return "https://sandbox.geality.com"
-}
-
-func (upa *UPAUtil) GetRepoToken() string {
-	upa.lock.RLock()
-	defer upa.lock.RUnlock()
-
-	return upa.Auth.AuthInfo.Token
-}
-
 //如果授权码认证失败，则尝试刷新认证
-func (upa *UPAUtil) RefreshAuth() error {
+func (upa *UPAUtil) refreshAuth() error {
 	upa.lock.Lock()
 	defer upa.lock.Unlock()
 
-	authResp, err := upa.getAuthResp()
+	authResp, err := upa.auth()
 	if err != nil {
 		fmt.Println("upa auth fail:", err)
 		return err
 	}
 
 	//更新Auth
-	upa.Auth = authResp
+	upa.authInfo = authResp.AuthInfo
 	return nil
 }
 
-func (upa *UPAUtil) getAuthResp() (*model.UpaAuthResp, error) {
-	html, err := upa.authPost()
-
-	authResp := &model.UpaAuthResp{}
-	if err := json.Unmarshal(html, authResp); err != nil {
-		return authResp, err
-	}
-
-	plain, err := decrypt.RsaDecryptData(authResp.Data, upa.rsaPriKey)
-	if err != nil {
-		return nil, err
-	}
-
-	authInfo := &model.UpaAuthInfo{}
-	if err := json.Unmarshal([]byte(plain), authInfo); err != nil {
-		return nil, err
-	}
-
-	authResp.AuthInfo = authInfo
-	return authResp, nil
-}
-
-func (upa *UPAUtil) authPost() ([]byte, error) {
+func (upa *UPAUtil) auth() (*model.UpaAuthResp, error) {
 	requestCode := strings.Replace(uuid.New().String(), "-", "", -1)
 	requestTime := strconv.Itoa(int(time.Now().UnixNano() / 1e6))
 	sign := fmt.Sprintf("%x", md5.Sum([]byte(upa.authSignature+requestTime)))
@@ -141,12 +112,55 @@ func (upa *UPAUtil) authPost() ([]byte, error) {
 	param["sign"] = sign
 	postData, _ := json.Marshal(param)
 
-	resp, err := upa.client.Post(UPA_AUTH_URL, postData)
+	resp, err := upa.client.Post(upa.upaAuthUrl, postData)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, MsgNet)
+	}
+	if resp.StatusCode != http.StatusOK {
+		err := errors.New(fmt.Sprintf("http status code is %d", resp.StatusCode))
+		return nil, errors.Wrap(err, MsgNet)
 	}
 
-	return resp.Body, nil
+	authResp := &model.UpaAuthResp{}
+	if err := json.Unmarshal(resp.Body, authResp); err != nil {
+		dataInfo := fmt.Sprintf("data:%s v:%#v", resp.Body, authResp)
+		msg := fmt.Sprintf(MsgBadDataFormat, dataInfo)
+		return authResp, errors.Wrap(err, msg)
+	}
+
+	plain, err := decrypt.RsaDecryptData(authResp.Data, upa.rsaPriKey)
+	if err != nil {
+
+		return nil, errors.Wrap(err, MsgDecrypt)
+	}
+
+	authInfo := &model.UpaAuthInfo{}
+	if err := json.Unmarshal([]byte(plain), authInfo); err != nil {
+		dataInfo := fmt.Sprintf("data:%s v:%#v", resp.Body, authResp)
+		msg := fmt.Sprintf(MsgBadDataFormat, dataInfo)
+		return nil, errors.Wrap(err, msg)
+	}
+
+	authResp.AuthInfo = authInfo
+	return authResp, nil
+}
+
+func (upa *UPAUtil) getRepoWebHost() string {
+	upa.lock.RLock()
+	defer upa.lock.RUnlock()
+
+	if len(upa.authInfo.ServerAddress) > 0 {
+		return upa.authInfo.ServerAddress[0]
+	}
+	//default
+	return "https://sandbox.geality.com"
+}
+
+func (upa *UPAUtil) getRepoToken() string {
+	upa.lock.RLock()
+	defer upa.lock.RUnlock()
+
+	return upa.authInfo.Token
 }
 
 func (upa *UPAUtil) GetUPACommonPersonAuthServer(resourceId int, cardNo, name, idCard,
@@ -161,7 +175,7 @@ func (upa *UPAUtil) GetUPACommonPersonAuthServer(resourceId int, cardNo, name, i
 		AuthFlag: authFlag,
 	}
 	//repo web url
-	repoUrl := fmt.Sprintf(REPOWEB_URL_PATH_FMT, upa.GetRepoWebHost(), "UPACommonPersonAuthServer")
+	repoUrl := fmt.Sprintf(upa.upaRepoUrlFmt, upa.getRepoWebHost(), "UPACommonPersonAuthServer")
 
 	var i int
 Retry:
@@ -177,7 +191,7 @@ Retry:
 		if i > 3 {
 			return resp.Bytes(), errors.New("refresh count exceed")
 		}
-		if err := upa.RefreshAuth(); err != nil {
+		if err := upa.refreshAuth(); err != nil {
 			return resp.Bytes(), errors.Wrap(err, "refresh auth err")
 		}
 		goto Retry
@@ -205,7 +219,7 @@ func (upa *UPAUtil) queryUpaServer(user model.UpaUser, resourceId int, url strin
 	}
 
 	//构建RepoRequest参数
-	token := upa.GetRepoToken()
+	token := upa.getRepoToken()
 	requestCode := strings.Replace(uuid.New().String(), "-", "", -1)
 	header := &model.ReqHeader{
 		DevelopmentId: upa.developmentId,
@@ -269,7 +283,7 @@ func (upa *UPAUtil) GetUPAAuthRecognizeServer(cardNo, name, idCard, mobile, mode
 		AuthFlag: authFlag,
 	}
 	//repo web url
-	repoUrl := fmt.Sprintf(REPOWEB_URL_PATH_FMT, upa.GetRepoWebHost(), "UPAAuthRecognizeServer")
+	repoUrl := fmt.Sprintf(upa.upaRepoUrlFmt, upa.getRepoWebHost(), "UPAAuthRecognizeServer")
 
 	var i int
 Retry:
@@ -285,7 +299,7 @@ Retry:
 		if i > 3 {
 			return resp.Bytes(), errors.New("refresh count exceed")
 		}
-		if err := upa.RefreshAuth(); err != nil {
+		if err := upa.refreshAuth(); err != nil {
 			return resp.Bytes(), errors.Wrap(err, "refresh auth err")
 		}
 		goto Retry
