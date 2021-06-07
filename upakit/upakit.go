@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"github.com/intrsokx/kitset/upakit/pkg/ratelimiter"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,16 +26,18 @@ var (
 	DefaultTimeOut = time.Second * 30
 
 	//upa kit工具包自定义Msg
-	MsgNet           = "[UPA KIT] network err"
-	MsgEncrypt       = "[UPA KIT] encrypt fail"
-	MsgDecrypt       = "[UPA KIT] decrypt fail"
-	MsgBadDataFormat = "[UPA KIT] bad data format (msg:%s)"
+	MsgNet            = "[UPA KIT] network err"
+	MsgEncrypt        = "[UPA KIT] encrypt fail"
+	MsgDecrypt        = "[UPA KIT] decrypt fail"
+	MsgBadDataFormat  = "[UPA KIT] bad data format (msg:%s)"
+	MsgAuthFrequently = "[UPA KIT] frequently refresh authorize interface"
 )
 
 //TODO add log
 type UPAUtil struct {
-	client *httputil.UpaClient
-	lock   sync.RWMutex
+	client  *httputil.UpaClient
+	lock    sync.RWMutex
+	rateLmt ratelimiter.RateLimiter
 
 	upaAuthUrl    string
 	upaRepoUrlFmt string
@@ -54,6 +57,7 @@ func NewUPAUtil(upaAuthUrl, upaRepoUrlFmt, developmentId, authSignature, key str
 		authSignature: authSignature,
 		baseKey:       key,
 		client:        httputil.NewHttpUtil(DefaultTimeOut),
+		rateLmt:       ratelimiter.NewLimiterByQpm(6),
 	}
 
 	buf := bytes.Buffer{}
@@ -86,6 +90,11 @@ func NewUPAUtil(upaAuthUrl, upaRepoUrlFmt, developmentId, authSignature, key str
 
 //如果授权码认证失败，则尝试刷新认证
 func (upa *UPAUtil) refreshAuth() error {
+	//TODO 针对调用刷新认证接口做限流
+	if !upa.rateLmt.WaitMaxDuration(1, time.Millisecond*100) {
+		return errors.New(MsgAuthFrequently)
+	}
+
 	upa.lock.Lock()
 	defer upa.lock.Unlock()
 
@@ -192,6 +201,7 @@ Retry:
 			return resp.Bytes(), errors.New("refresh count exceed")
 		}
 		if err := upa.refreshAuth(); err != nil {
+			//TODO 也可以在这里做熔断，
 			return resp.Bytes(), errors.Wrap(err, "refresh auth err")
 		}
 		goto Retry
