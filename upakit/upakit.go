@@ -267,7 +267,7 @@ func (upa *UPAUtil) doRequest(url string, repoReq *model.RepoRequest) (*model.Re
 		return nil, errors.Wrap(err, MsgNet)
 	}
 	if resp.StatusCode != http.StatusOK {
-		err := errors.New(fmt.Sprintf("http status code is %d", resp.StatusCode))
+		err := errors.New(fmt.Sprintf("url:%s, statusCode %d", url, resp.StatusCode))
 		return nil, errors.Wrap(err, MsgNet)
 	}
 
