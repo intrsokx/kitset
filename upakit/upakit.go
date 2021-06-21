@@ -90,7 +90,7 @@ func NewUPAUtil(upaAuthUrl, upaRepoUrlFmt, developmentId, authSignature, key str
 
 //如果授权码认证失败，则尝试刷新认证
 func (upa *UPAUtil) refreshAuth() error {
-	//TODO 针对调用刷新认证接口做限流
+	//针对调用刷新认证接口做限流
 	if !upa.rateLmt.WaitMaxDuration(1, time.Millisecond*100) {
 		return errors.New(MsgAuthFrequently)
 	}
