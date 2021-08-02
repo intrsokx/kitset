@@ -2,7 +2,7 @@ package encrypt
 
 import (
 	"encoding/base64"
-	"github.com/intrsokx/encrypt-util/aesutil"
+	"github.com/intrsokx/kitset/encrypt-util/aesutil"
 )
 
 func EncryptAesBase64(data []byte, key []byte) (string, error) {

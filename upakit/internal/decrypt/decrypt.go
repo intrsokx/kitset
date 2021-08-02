@@ -3,8 +3,8 @@ package decrypt
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/intrsokx/encrypt-util/aesutil"
-	"github.com/intrsokx/encrypt-util/rsautil"
+	"github.com/intrsokx/kitset/encrypt-util/aesutil"
+	"github.com/intrsokx/kitset/encrypt-util/rsautil"
 	"net/url"
 	"strconv"
 )
