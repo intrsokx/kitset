@@ -1,10 +1,9 @@
-package main
+package rsautil
 
 import (
 	"crypto"
 	"encoding/base64"
-	"fmt"
-	"github.com/intrsokx/kitset/encrypt-util/rsautil"
+	"testing"
 )
 
 var (
@@ -46,51 +45,57 @@ jX/X83UcUksMx8Tjn2+6Mw+1yN6r+P0KQ6p2C4X7oudpbtdvpNM4mhadBdTbWOTk
 -----END RSA PRIVATE KEY-----`
 )
 
-func main() {
-	data := "hello world!"
+var origin = "origin data"
 
-	cfg := &rsautil.Config{
-		ParsePublicKey:     rsautil.ParsePKIXPublicKey,
-		ParsePrivateKey:    rsautil.ParsePKCS1PrivateKey,
-		EncryptWithPublic:  rsautil.EncryptPKCS1v15,
+func TestEncrypt(t *testing.T) {
+	cfg := &Config{
+		ParsePublicKey:     ParsePKIXPublicKey,
+		ParsePrivateKey:    ParsePKCS1PrivateKey,
+		EncryptWithPublic:  EncryptPKCS1v15,
 		EncryptWithPrivate: nil,
 		DecryptWithPub:     nil,
-		DecryptWithPrivate: rsautil.DecryptPKCS1v15,
+		DecryptWithPrivate: DecryptPKCS1v15,
+		//是否分段加密
 		CryptSub:           true,
+		//分段加密步长
 		SubStep:            256,
 	}
-	//cfg = nil
 
 	//加密
-	encrypted, err := rsautil.Encrypt([]byte(data), []byte(pub), cfg)
+	encrypted, err := Encrypt([]byte(origin), []byte(pub), cfg)
 	if err != nil {
-		panic(err)
+		t.Error("rsa encrypt fail:", err)
 	}
-	fmt.Println("encrypted base64:", base64.StdEncoding.EncodeToString(encrypted))
+	t.Log("encrypted base64:", base64.StdEncoding.EncodeToString(encrypted))
 
 	//解密
-	plain, err := rsautil.Decrypt(encrypted, []byte(pri), cfg)
+	plain, err := Decrypt(encrypted, []byte(pri), cfg)
 	if err != nil {
-		panic(err)
+		t.Error("rsa decrypt fail:", err)
 	}
-	fmt.Println("plain:", string(plain))
+	t.Log("plain:", string(plain))
 
 	//解析公私钥
-	priKey, err := rsautil.ParsePKCS1PrivateKey([]byte(pri))
+	priKey, err := ParsePKCS1PrivateKey([]byte(pri))
 	if err != nil {
-		panic(err)
+		t.Error("parse pkcs1 private key fail:", err)
 	}
-	pubKey, err := rsautil.ParsePKIXPublicKey([]byte(pub))
+
+	pubKey, err := ParsePKIXPublicKey([]byte(pub))
 	if err != nil {
-		panic(err)
+		t.Error("parse pkix public key fail:", err)
 	}
 
 	//私钥加签
-	sign, err := rsautil.SignByPKCS1v15([]byte(data), priKey, crypto.MD5)
+	sign, err := SignByPKCS1v15([]byte(origin), priKey, crypto.MD5)
 	if err != nil {
-		panic(err)
+		t.Error("use priKey add sign fail:", err)
 	}
 	//公钥验签
-	res := rsautil.VerifySignByPKCS1v15([]byte(data), sign, pubKey, crypto.MD5)
-	fmt.Println("check sign res:", res)
+	success := VerifySignByPKCS1v15([]byte(origin), sign, pubKey, crypto.MD5)
+	if !success {
+		t.Error("use pubKey check sign fail")
+	} else {
+		t.Log("use pubKey check sign success")
+	}
 }

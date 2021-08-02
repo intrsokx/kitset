@@ -1,7 +1,6 @@
 package aesutil
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"errors"
@@ -52,9 +51,8 @@ func Decrypt(cipheredData, key, iv []byte) ([]byte, error) {
 	return plainText, nil
 }
 
-type PadingFunc func([]byte) []byte
 
-func CBCEncrypt(origData, key, iv []byte, padingFun PadingFunc) ([]byte, error) {
+func CBCEncrypt(origData, key, iv []byte, pf PaddingFunc) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -69,7 +67,7 @@ func CBCEncrypt(origData, key, iv []byte, padingFun PadingFunc) ([]byte, error) 
 	}
 
 	//加密（1、先填充数据。 2、再加密）
-	origData = padingFun(origData)
+	origData = pf(origData, block.BlockSize())
 	dst := make([]byte, len(origData))
 
 	cbcEncrypter := cipher.NewCBCEncrypter(block, iv)
@@ -78,7 +76,7 @@ func CBCEncrypt(origData, key, iv []byte, padingFun PadingFunc) ([]byte, error) 
 	return dst, nil
 }
 
-func CBCDecrypt(cipherData, key, iv []byte, unPadingFun PadingFunc) ([]byte, error) {
+func CBCDecrypt(cipherData, key, iv []byte, upf UnPaddingFunc) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -97,53 +95,17 @@ func CBCDecrypt(cipherData, key, iv []byte, unPadingFun PadingFunc) ([]byte, err
 	cbcDecrypter := cipher.NewCBCDecrypter(block, iv)
 	cbcDecrypter.CryptBlocks(dst, cipherData)
 
-	return unPadingFun(dst), nil
+	return upf(dst), nil
 }
 
-//一些跟aes加密相关的数据填充方法
-func PKCS5Padding(origData []byte) []byte {
-	padLength := aes.BlockSize - len(origData)%aes.BlockSize
-	padText := bytes.Repeat([]byte{byte(padLength)}, padLength)
-
-	return append(origData, padText...)
-}
-
-func PKCS5UnPadding(cipherData []byte) []byte {
-	length := len(cipherData)
-	padLength := int(cipherData[length-1])
-
-	return cipherData[:(length - padLength)]
-}
-
-/**
-zeroPadding的话，有个特殊情况的bug，不推荐使用。
-
-假设 originData = []byte{byte(0), byte(0), byte(0)}
-padding后 [0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-在zeroUnPadding后就会变成一个空的字节数组。而不是originData
-*/
-func ZeroPadding(origData []byte) []byte {
-	padLength := aes.BlockSize - len(origData)%aes.BlockSize
-	padtext := bytes.Repeat([]byte{byte(0)}, padLength)
-
-	return append(origData, padtext...)
-}
-
-func ZeroUnPadding(cipherData []byte) []byte {
-	return bytes.TrimFunc(cipherData,
-		func(r rune) bool {
-			return r == rune(0)
-		})
-}
-
-func ECBEncrypt(origData, key []byte, padingFun PadingFunc) ([]byte, error) {
+func ECBEncrypt(origData, key []byte, pf PaddingFunc) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
 	//加密（1、先填充数据。 2、再加密）
-	origData = padingFun(origData)
+	origData = pf(origData, block.BlockSize())
 	cipherText := make([]byte, len(origData))
 
 	ecbEncrypter := ecb.NewECBEncrypter(block)
@@ -152,7 +114,7 @@ func ECBEncrypt(origData, key []byte, padingFun PadingFunc) ([]byte, error) {
 	return cipherText, nil
 }
 
-func ECBDecrypt(cipheredData, key []byte, unPadingFun PadingFunc) ([]byte, error) {
+func ECBDecrypt(cipheredData, key []byte, upf UnPaddingFunc) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -164,5 +126,5 @@ func ECBDecrypt(cipheredData, key []byte, unPadingFun PadingFunc) ([]byte, error
 	plainText := make([]byte, len(cipheredData))
 	ecbDecrypter.CryptBlocks(plainText, cipheredData)
 
-	return unPadingFun(plainText), nil
+	return upf(plainText), nil
 }
